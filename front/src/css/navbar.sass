@@ -1,0 +1,45 @@
+@import url('https://fonts.googleapis.com/css?family=Mooli')
+
+.navbar
+    margin-top: 15px
+    margin-left: 15px
+    width: 100vw
+    display: flex
+    justify-content: space-between
+
+.navbar-left
+    display: flex
+    align-items: center
+    cursor: pointer
+
+.navbar-right
+    width: 35%
+    display: flex
+    justify-content: space-around
+    align-items: center
+    font-family: 'Mooli'
+    .navbar-button
+        background: #fb89a6
+        transition: background 0.5s ease
+        padding: 15px
+        padding-top: 10px
+        padding-bottom: 10px
+        border-radius: 30px
+        cursor: pointer
+        &:hover
+            background: #fa4975
+            .poll-search
+                display: flex
+
+.poll-search
+    display: none
+    position: absolute
+    margin-top: 10px
+    padding: 15px
+    right: 47px
+    border-radius: 10px
+    width: 8vw
+    flex-direction: column
+    background: #fa4975
+    &:hover
+        display: flex

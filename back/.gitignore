@@ -1,0 +1,14 @@
+db
+
+node_modules
+.idea
+*.local
+
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

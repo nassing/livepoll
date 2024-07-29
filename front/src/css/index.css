@@ -1,0 +1,28 @@
+a {
+    text-decoration: none; /* Remove underlines */
+    color: inherit; /* Inherit text color */
+  }
+  
+  /* Remove default list styles */
+  ul, ol {
+    list-style: none; /* Remove bullets/numbers */
+    padding: 0; /* Remove default padding */
+    margin: 0; /* Remove default margin */
+  }
+  
+  /* Remove default styles for headings, paragraphs, and body */
+  h1, h2, h3, h4, h5, h6 {
+    margin: 0; /* Remove default margin */
+    font-weight: inherit; /* Inherit font weight */
+  }
+  
+  p {
+    margin: 0; /* Remove default margin */
+  }
+  
+  body {
+    margin: 0; /* Remove default margin */
+    overflow-x: hidden;
+  }
+
+/* done */

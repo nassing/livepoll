@@ -1,0 +1,41 @@
+@import url('https://fonts.googleapis.com/css?family=Mooli')
+    
+.livepoll-logo
+    display: flex
+    align-items: center
+    --logo-bar-width-1: 79%
+    --logo-bar-width-2: 37%
+    --logo-bar-width-3: 50%
+
+.livepoll-icon
+    width: 38px
+    padding-left: 5px
+    display: flex
+    flex-direction: column
+    align-items: flex-start
+    justify-content: center
+    gap: 3px
+    border-radius: 5px
+
+.livepoll-icon-bar
+    height: 8px
+    border-radius: 2px
+    width: calc(100% - 5px)
+    &:nth-child(1)
+        background: #59d3f9
+        width: var(--logo-bar-width-1)
+        transition: width 1s ease
+    &:nth-child(2)
+        background: #f9e533
+        width: var(--logo-bar-width-2)
+        transition: width 1s ease
+    &:nth-child(3)
+        background: #f93b6b
+        width: var(--logo-bar-width-3)
+        transition: width 1s ease
+
+.livepoll-logo-text
+    font-family: 'Mooli'
+    font-weight: 600
+
+// done
