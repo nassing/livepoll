@@ -6,6 +6,7 @@ export default function PollMaker({ goToPoll }) {
 	const [multipleChoice, setMultipleChoice] = useState(false);
 	const [multipleVote, setMultipleVote] = useState(false);
 	const [changeVote, setChangeVote] = useState(false);
+	const [error, setError] = useState(null);
 
   function handleAnswerChange(index, value) {
     const updatedAnswers = [...answers];
@@ -25,25 +26,30 @@ export default function PollMaker({ goToPoll }) {
   };
 
 	async function submitPoll() {
+		const filledAnswers = answers.map(answer => answer.trim()).filter(answer => answer.length > 0);
+
+		if(!question.trim() || filledAnswers.length < 2) {
+			setError("A poll needs a question and at least 2 answers");
+			return;
+		}
+
 		const response = await fetch("/api/poll", {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json"
 			},
-			body: JSON.stringify({ question, answers, multipleChoice, multipleVote, changeVote })
+			body: JSON.stringify({ question, answers: filledAnswers, multipleChoice, multipleVote, changeVote })
 		});
 
-		const pollUuid = (await response.json()).pollUuid;
+		const body = await response.json();
 
-		if(pollUuid) {
-			const uuidPattern = /^[0-9A-Z]{6}$/;
-		
-			if(uuidPattern.test(pollUuid)) {
-				goToPoll(pollUuid);
-			} else {
-				// notification
-			}
+		if(!response.ok) {
+			setError(body.error ?? "Could not create the poll");
+			return;
 		}
+
+		setError(null);
+		goToPoll(body.pollUuid);
 	}
 
 	return(
@@ -79,6 +85,7 @@ export default function PollMaker({ goToPoll }) {
 
 			<div className="poll-maker-create">
 				<button onClick={ () => submitPoll() }>Create</button>
+				{ error ? <p className="poll-maker-error">{ error }</p> : null }
 			</div>
 		</div>
 	)
