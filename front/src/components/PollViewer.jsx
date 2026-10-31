@@ -122,11 +122,10 @@ export default function PollViewer() {
 						</div>
 					)) }
 				</div>
-				<div>
-					{/* DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG DEBUG */}
-					<p>{ poll?.multiple_choice ? 'multipleChoice' : 'notMultipleChoice' }</p>
-					<p>{ poll?.multiple_vote ? 'multipleVote' : 'notMultipleVote' }</p>
-					<p>{ poll?.change_vote ? 'changeVote' : 'notchangeVote' }</p>
+				<div className="poll-viewer-rules">
+					{ poll?.multiple_vote ? <p>You can vote as many times as you want</p> : null }
+					{ !poll?.multiple_vote && poll?.multiple_choice ? <p>You can vote for several answers</p> : null }
+					{ !poll?.multiple_vote && poll?.change_vote ? <p>You can change your vote</p> : null }
 				</div>
 			</div>
 			<div className="poll-viewer-right">
