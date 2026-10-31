@@ -75,7 +75,7 @@ export default function PollViewer() {
 	return(
 		<div className="poll-viewer">
 			<div className="poll-viewer-left">
-				<h1>{ poll?.question }</h1>
+				<h1>{ poll?.question_text }</h1>
 				<div className="poll-viewer-answers">
 					{ poll?.answers.map((answer, index) => (
 						<div className="poll-viewer-answer-line" key={`poll-viewer-answer-line-${index}`}>
