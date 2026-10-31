@@ -1,4 +1,5 @@
 const uuid = require('uuid');
+const crypto = require('crypto');
 
 const db = require('knex')({
   client: 'sqlite3',
@@ -10,6 +11,10 @@ const db = require('knex')({
   // "check the vote rules, then insert the vote" atomic in castVote().
   pool: { min: 1, max: 1 }
 });
+
+// No 0/O/1/I to avoid confusion when a code is typed by hand
+const POLL_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const POLL_CODE_LENGTH = 6;
 
 async function init() {
   const usersTableExist = await db.schema.hasTable('users');
@@ -77,18 +82,30 @@ async function checkUser(userUuid) {
   return (await getUserId(userUuid)) !== null;
 }
 
+function generatePollCode() {
+  let code = '';
+  for (let i = 0; i < POLL_CODE_LENGTH; i++) {
+    code += POLL_CODE_ALPHABET[crypto.randomInt(POLL_CODE_ALPHABET.length)];
+  }
+  return code;
+}
+
 async function createPoll(poll, userUuid) {
-  const userId = (await db('users').where({ uuid: userUuid }).select('id').first()).id;
+  return db.transaction(async trx => {
+    const userId = await getUserId(userUuid, trx);
 
-  const pollUuid = uuid.v4().slice(0, 6).toUpperCase();
-  await db('polls').insert({ uuid: pollUuid, user_id: userId, question_text: poll.question, multiple_choice: poll.multipleChoice, multiple_vote: poll.multipleVote, change_vote: poll.changeVote });
-  
-  const pollId = (await db('polls').where({ uuid: pollUuid }).select('id').first()).id;
-  const answers = poll.answers.map(answer => { return { uuid: uuid.v4().toUpperCase(), answer_text: answer, poll_id: pollId } });
-  
-  await db('answers').insert(answers);
+    let pollUuid;
+    do {
+      pollUuid = generatePollCode();
+    } while (await trx('polls').where({ uuid: pollUuid }).first());
 
-  return pollUuid;
+    const [pollId] = await trx('polls').insert({ uuid: pollUuid, user_id: userId, question_text: poll.question, multiple_choice: poll.multipleChoice, multiple_vote: poll.multipleVote, change_vote: poll.changeVote });
+
+    const answers = poll.answers.map(answer => { return { uuid: uuid.v4().toUpperCase(), answer_text: answer, poll_id: pollId } });
+    await trx('answers').insert(answers);
+
+    return pollUuid;
+  });
 }
 
 // Returns null when the poll does not exist
