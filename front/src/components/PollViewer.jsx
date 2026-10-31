@@ -55,9 +55,6 @@ export default function PollViewer() {
 
 	useEffect(() => {
 		getPoll();
-		setTimeout(getPoll, 1000);
-		setTimeout(getPoll, 3000);
-		setTimeout(getPoll, 10000);
 
 		ws.onmessage = (event) => {
 			const { votes, removed } = JSON.parse(event.data);
