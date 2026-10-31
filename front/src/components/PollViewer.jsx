@@ -12,6 +12,7 @@ function pollSocketUrl(pollUuid) {
 
 export default function PollViewer() {
 	const [poll, setPoll] = useState(null);
+	const [notFound, setNotFound] = useState(false);
 	const [votedAnswersUuids, setVotedAnswersUuids] = useState([]);
 	// vote uuid -> answer uuid
 	const [answersMap, setAnswersMap] = useState({});
@@ -28,8 +29,15 @@ export default function PollViewer() {
 	let { pollUuid } = useParams();
 
 	async function getPoll() {
-		const response = await fetch(`/api/poll/${pollUuid}`);
+		const response = await fetch(`/api/poll/${encodeURIComponent(pollUuid)}`);
+
+		if(!response.ok) {
+			setNotFound(response.status === 404);
+			return;
+		}
+
 		const apiPoll = await response.json();
+		setNotFound(false);
 		setPoll(apiPoll);
 		setVotedAnswersUuids(apiPoll.myAnswers ?? []);
 		console.log(apiPoll.votes);
@@ -91,6 +99,13 @@ export default function PollViewer() {
 		};
 	}, [pollUuid]);
 
+	if(notFound) {
+		return(
+			<div className="poll-viewer">
+				<h1>Poll { pollUuid } not found</h1>
+			</div>
+		)
+	}
 
 	// Check si on est le créateur de Poll ou pas
 	return(
