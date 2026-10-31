@@ -117,7 +117,7 @@ app.post('/api/poll', asyncHandler(async function(req, res) {
 }));
 
 app.get('/api/poll/:pollUuid', asyncHandler(async function(req, res) {
-  const pollUuid = req.params.pollUuid.toUpperCase();
+  const pollUuid = req.params.pollUuid.trim().toUpperCase();
   const poll = await db.getPoll(pollUuid);
 
   if (!poll) {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, createPath } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 import LivePollLogoManager from './graphics/LivePollLogoManager';
 import LivePollLogo from './graphics/LivePollLogo';
@@ -7,13 +7,26 @@ import LivePollLogo from './graphics/LivePollLogo';
 export default function NavBar({goToPoll}) {
 
     const [searchPollUuid, setSearchPollUuid] = useState("");
+    const [searchError, setSearchError] = useState(false);
     const [userPolls, setUserPolls] = useState(null);
+    const location = useLocation();
 
     async function getUserPolls() {
-		const response = await fetch(`/api/my-polls`);
-		const apiUserPolls = await response.json();
-		setUserPolls(apiUserPolls);
-	}
+        const response = await fetch(`/api/my-polls`);
+
+        if(response.ok) {
+            setUserPolls(await response.json());
+        }
+    }
+
+    async function searchPoll() {
+        const found = await goToPoll(searchPollUuid);
+
+        setSearchError(!found);
+        if(found) {
+            setSearchPollUuid("");
+        }
+    }
 
     function formatPollQuestion(pollQuestion) {
         if(pollQuestion.length < 15) {
@@ -23,9 +36,10 @@ export default function NavBar({goToPoll}) {
         }
     }
 
+    // Reloaded on navigation so that a freshly created poll shows up
 	useEffect(() => {
 		getUserPolls();
-	}, []);
+	}, [location.pathname]);
 
     return(
         <div className="navbar">
@@ -46,8 +60,9 @@ export default function NavBar({goToPoll}) {
                 <div className="navbar-button">
                     <p>View a poll</p>
                     <div className="poll-search">
-                        <input type="text"  value={ searchPollUuid } onChange={ e => setSearchPollUuid(e.target.value) } />
-                        <button onClick={ () => goToPoll(searchPollUuid) }>Go To Poll</button>
+                        <input type="text" value={ searchPollUuid } onChange={ e => { setSearchPollUuid(e.target.value); setSearchError(false); } } onKeyDown={ e => e.key === 'Enter' && searchPoll() } />
+                        <button onClick={ searchPoll }>Go To Poll</button>
+                        { searchError ? <p>Poll not found</p> : null }
                         { userPolls ? userPolls.map((poll) => (
                             <Link key={ poll.uuid } to={`poll/${poll.uuid}` }>
                                 <p>{ formatPollQuestion(poll.question_text) }</p>
