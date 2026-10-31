@@ -25,8 +25,6 @@ export default function PollViewer() {
 
 	let { pollUuid } = useParams();
 
-	const ws = new WebSocket(pollSocketUrl(pollUuid));
-
 	async function getPoll() {
 		const response = await fetch(`/api/poll/${pollUuid}`);
 		const apiPoll = await response.json();
@@ -54,18 +52,23 @@ export default function PollViewer() {
 	}
 
 	useEffect(() => {
-		getPoll();
+		const ws = new WebSocket(pollSocketUrl(pollUuid));
+
+		setPoll(null);
+		setAnswersMap({});
 
 		ws.onmessage = (event) => {
 			const { votes, removed } = JSON.parse(event.data);
 			applyVotes(votes ?? [], removed ?? []);
 		};
-	  
-		  // Close the WebSocket connection when the component unmounts
-		  return () => {
+
+		getPoll();
+
+		// Close the WebSocket connection when the component unmounts
+		return () => {
 			ws.close();
-		  };
-	}, []);
+		};
+	}, [pollUuid]);
 
 
 	// Check si on est le créateur de Poll ou pas
