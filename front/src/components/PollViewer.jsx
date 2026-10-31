@@ -40,7 +40,6 @@ export default function PollViewer() {
 		setNotFound(false);
 		setPoll(apiPoll);
 		setVotedAnswersUuids(apiPoll.myAnswers ?? []);
-		console.log(apiPoll.votes);
 		setAnswersMap(Object.fromEntries(apiPoll.votes.map(vote => [vote.uuid, vote.answerUuid])));
 	}
 
@@ -116,7 +115,7 @@ export default function PollViewer() {
 					{ poll?.answers.map((answer, index) => (
 						<div className="poll-viewer-answer-line" key={`poll-viewer-answer-line-${index}`}>
 							<p className="poll-viewer-answer-text">{ answer.answer_text }</p>
-							<p>{ Object.values(answersMap).filter(answerUuid => answerUuid == answer.uuid).length ?? 0 }</p>
+							<p>{ Object.values(answersMap).filter(answerUuid => answerUuid === answer.uuid).length }</p>
 							{ votedAnswersUuids.includes(answer.uuid) ? <p>✔️</p> : null }
 							<button onClick={() => handleVote(answer.uuid)}>Vote</button>
 						</div>
