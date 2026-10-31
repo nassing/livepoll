@@ -3,7 +3,7 @@ const uuid = require('uuid');
 const db = require('knex')({
   client: 'sqlite3',
   connection: {
-    filename: "./db"
+    filename: process.env.DB_PATH || "./db"
   }
 });
 
@@ -59,14 +59,18 @@ async function createUser() {
   return userUuid;
 }
 
-async function checkUser(userUuid) {
+async function getUserId(userUuid) {
   if (!userUuid) {
-    return false;
+    return null;
   }
 
   const user = await db('users').where({ uuid: userUuid }).select('id').first();
 
-  return !!user;
+  return user?.id ?? null;
+}
+
+async function checkUser(userUuid) {
+  return (await getUserId(userUuid)) !== null;
 }
 
 async function createPoll(poll, userUuid) {
@@ -83,8 +87,14 @@ async function createPoll(poll, userUuid) {
   return pollUuid;
 }
 
+// Returns null when the poll does not exist
 async function getPoll(pollUuid) {
   let poll = await db('polls').where({ uuid: pollUuid }).select('id', 'question_text', 'multiple_choice', 'multiple_vote', 'change_vote').first();
+
+  if (!poll) {
+    return null;
+  }
+
   const answers = (await db('answers').where({ poll_id: poll.id }).select('id', 'uuid', 'answer_text'));
   
   const answers_ids = answers.map(answer => answer.id);
@@ -111,8 +121,13 @@ async function getPoll(pollUuid) {
 }
 
 async function getPollByAnswerUuid(answerUuid) {
-  const pollId = (await db('answers').where({ uuid: answerUuid }).select('poll_id').first()).poll_id;
-  const poll = await db('polls').where({ id: pollId }).select('id', 'uuid', 'question_text', 'multiple_choice', 'multiple_vote', 'change_vote').first();
+  const answer = await db('answers').where({ uuid: answerUuid }).select('poll_id').first();
+
+  if (!answer) {
+    return null;
+  }
+
+  const poll = await db('polls').where({ id: answer.poll_id }).select('id', 'uuid', 'question_text', 'multiple_choice', 'multiple_vote', 'change_vote').first();
 
   return poll;
 }
@@ -135,10 +150,13 @@ async function getUserAnswersByUserAndPoll(userUuid, pollUuid) {
 }
 
 async function getUserPolls(userUuid) {
-  const userId = (await db('users').where({ uuid: userUuid }).select('id').first()).id;
-  const polls = await db('polls').where({ user_id: userId }).select('uuid', 'question_text');
+  const userId = await getUserId(userUuid);
 
-  return polls;
+  if (!userId) {
+    return [];
+  }
+
+  return db('polls').where({ user_id: userId }).select('uuid', 'question_text');
 }
 
 async function removeVote(voteUuid) {
@@ -159,7 +177,6 @@ async function vote(votes) {
     vote.answer_id = answer?.id ?? null;
     vote.poll_id = answer?.poll_id ?? null;
     vote.user_id = users?.find(user => user.uuid === vote.userUuid)?.id ?? null;
-    vote.uuid = uuid.v4().toUpperCase();
 
     if(!vote.answer_id || !vote.poll_id || !vote.user_id) {
       vote.toBeRemoved = true;

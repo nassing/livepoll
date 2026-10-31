@@ -10,8 +10,7 @@ export default function NavBar({goToPoll}) {
     const [userPolls, setUserPolls] = useState(null);
 
     async function getUserPolls() {
-		const response = await fetch(`https://livepoll.nassing.fr/api/my-polls/`);
-        //const response = await fetch(`http://localhost:6678/api/my-polls/`);
+		const response = await fetch(`/api/my-polls`);
 		const apiUserPolls = await response.json();
 		setUserPolls(apiUserPolls);
 	}

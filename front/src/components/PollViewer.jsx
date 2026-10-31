@@ -3,8 +3,8 @@ import { useParams } from "react-router-dom";
 import QR from './QR';
 
 export default function PollViewer() {
-	const ws = new WebSocket('wss://livepoll.nassing.fr/api');
-	//const ws = new WebSocket('ws://localhost:6678');
+	const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+	const ws = new WebSocket(`${protocol}://${window.location.host}/api`);
 	
 	const [poll, setPoll] = useState(null);
 	const [votedAnswersUuids, setVotedAnswersUuids] = useState([]);
@@ -17,8 +17,7 @@ export default function PollViewer() {
 	let { pollUuid } = useParams();
 
 	async function getPoll() {
-		const response = await fetch(`https://livepoll.nassing.fr/api/poll/${pollUuid}`);
-		//const response = await fetch(`http://localhost:6678/api/poll/${pollUuid}`);
+		const response = await fetch(`/api/poll/${pollUuid}`);
 		const apiPoll = await response.json();
 		setPoll(apiPoll);
 		console.log(apiPoll.votes);
@@ -29,8 +28,7 @@ export default function PollViewer() {
 	}
 
 	async function handleVote(answerUuid) {
-		const response = await fetch("https://livepoll.nassing.fr/api/vote", {
-		//const response = await fetch("http://localhost:6678/api/vote", {
+		const response = await fetch("/api/vote", {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json"
@@ -98,7 +96,7 @@ export default function PollViewer() {
 				</div>
 			</div>
 			<div className="poll-viewer-right">
-				<QR link={"https://livepoll.nassing.fr/poll/" + pollUuid} />
+				<QR link={`${window.location.origin}/poll/${pollUuid}`} />
 			</div>
 		</div>
 	)

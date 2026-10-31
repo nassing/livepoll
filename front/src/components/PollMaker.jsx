@@ -25,8 +25,7 @@ export default function PollMaker({ goToPoll }) {
   };
 
 	async function submitPoll() {
-		const response = await fetch("https://livepoll.nassing.fr/api/poll", {
-		//const response = await fetch("http://localhost:6678/api/poll", {
+		const response = await fetch("/api/poll", {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json"

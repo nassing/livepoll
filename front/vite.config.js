@@ -5,6 +5,13 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 6677
+    port: 6677,
+    // The front calls relative /api URLs: in dev they are forwarded to the back (HTTP and WebSocket)
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:6678',
+        ws: true,
+      },
+    },
   },
 })
