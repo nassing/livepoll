@@ -121,7 +121,7 @@ async function checkVoteValid(userUuid, answerUuid) {
   }
 
   if (poll.multiple_choice) {
-    return !(answerUuid in userAnswers.map(a => a.answer_uuid));
+    return !userAnswers.some(a => a.answer_uuid === answerUuid);
   }
 
   if (poll.change_vote) {
