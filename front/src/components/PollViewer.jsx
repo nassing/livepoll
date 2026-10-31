@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import QR from './QR';
 
+const RECONNECT_DELAY = 2000;
+
 function pollSocketUrl(pollUuid) {
 	const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
 
@@ -52,20 +54,39 @@ export default function PollViewer() {
 	}
 
 	useEffect(() => {
-		const ws = new WebSocket(pollSocketUrl(pollUuid));
+		let ws = null;
+		let reconnectTimeout = null;
+		let unmounted = false;
 
 		setPoll(null);
 		setAnswersMap({});
 
-		ws.onmessage = (event) => {
-			const { votes, removed } = JSON.parse(event.data);
-			applyVotes(votes ?? [], removed ?? []);
-		};
+		function connect() {
+			ws = new WebSocket(pollSocketUrl(pollUuid));
 
+			ws.onmessage = (event) => {
+				const { votes, removed } = JSON.parse(event.data);
+				applyVotes(votes ?? [], removed ?? []);
+			};
+
+			// Votes may have been missed while disconnected: reload the poll and reconnect
+			ws.onclose = () => {
+				if(!unmounted) {
+					reconnectTimeout = setTimeout(() => {
+						getPoll();
+						connect();
+					}, RECONNECT_DELAY);
+				}
+			};
+		}
+
+		connect();
 		getPoll();
 
 		// Close the WebSocket connection when the component unmounts
 		return () => {
+			unmounted = true;
+			clearTimeout(reconnectTimeout);
 			ws.close();
 		};
 	}, [pollUuid]);
