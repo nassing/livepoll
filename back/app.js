@@ -19,11 +19,15 @@ const db = require("./db.js");
 const PORT = process.env.PORT || 6678;
 const FRONT_DIST = process.env.FRONT_DIST || path.join(__dirname, '../front/dist');
 
+const MAX_QUESTION_LENGTH = 200;
+const MAX_ANSWER_LENGTH = 100;
+const MAX_ANSWERS = 20;
+
 const app = express();
 
 app.use(cors())
 app.use(cookieParser());
-app.use(express.json());
+app.use(express.json({ limit: '10kb' }));
 
 const server = createServer(app);
 
@@ -57,6 +61,35 @@ async function getUserUuid(req, res) {
   }
 
   return userUuid;
+}
+
+//---------------- Validation --------------------------//
+
+function isNonEmptyString(value, maxLength) {
+  return typeof value === 'string' && value.trim().length > 0 && value.trim().length <= maxLength;
+}
+
+// Returns the normalized poll, or null if the body is invalid
+function parsePoll(body) {
+  if (!body || !isNonEmptyString(body.question, MAX_QUESTION_LENGTH)) {
+    return null;
+  }
+
+  if (!Array.isArray(body.answers) || body.answers.length < 2 || body.answers.length > MAX_ANSWERS) {
+    return null;
+  }
+
+  if (!body.answers.every(answer => isNonEmptyString(answer, MAX_ANSWER_LENGTH))) {
+    return null;
+  }
+
+  return {
+    question: body.question.trim(),
+    answers: body.answers.map(answer => answer.trim()),
+    multipleChoice: !!body.multipleChoice,
+    multipleVote: !!body.multipleVote,
+    changeVote: !!body.changeVote,
+  };
 }
 
 //---------------- Logic --------------------------//
@@ -106,8 +139,14 @@ app.use('/api', asyncHandler(async function(req, res, next) {
 }));
 
 app.post('/api/poll', asyncHandler(async function(req, res) {
+  const poll = parsePoll(req.body);
+
+  if (!poll) {
+    res.status(400).send({ error: `A poll needs a question and between 2 and ${MAX_ANSWERS} non-empty answers` });
+    return;
+  }
+
   const userUuid = await getUserUuid(req, res);
-  const poll = req.body;
   const pollUuid = await db.createPoll(poll, userUuid);
 
   res.send({pollUuid: pollUuid});
