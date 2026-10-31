@@ -199,31 +199,35 @@ setInterval(function() {
 }, 300);
 
 
-//---------------- Close ws (don't touch) --------------------------//
-
-//Kick inactive users
-class heartbeat {
-  constructor() {
-    clearTimeout(this.pingTimeout);
-    this.pingTimeout = setTimeout(() => {
-      this.terminate();
-    }, 30000 + 1000);
-  }
-}
+//---------------- Connection & heartbeat --------------------------//
 
 // Clients subscribe to one poll: ws(s)://host/api?poll=XXXXXX
 wss.on('connection', function connection(socket, req) {
   const params = new URL(req.url, 'http://localhost').searchParams;
 
   socket.pollUuid = (params.get('poll') ?? '').toUpperCase();
+  socket.isAlive = true;
+  socket.on('pong', () => { socket.isAlive = true; });
+  socket.on('error', console.error);
 });
 
+// Kick connections that did not answer the previous ping
+const heartbeat = setInterval(function() {
+  wss.clients.forEach(socket => {
+    if (!socket.isAlive) {
+      socket.terminate();
+      return;
+    }
+
+    socket.isAlive = false;
+    socket.ping();
+  });
+}, 30000);
+
 wss.on('error', console.error);
-wss.on('open', heartbeat);
-wss.on('ping', heartbeat);
-wss.on('close', function clear() {
-  clearTimeout(this.pingTimeout);
-})
+wss.on('close', function() {
+  clearInterval(heartbeat);
+});
 
 
 //---------------- Front (production build) --------------------------//
