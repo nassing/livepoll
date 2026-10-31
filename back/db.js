@@ -124,6 +124,31 @@ async function getPoll(pollUuid) {
   return poll;
 }
 
+// Answer uuids the user has currently voted for in a poll
+async function getUserAnswerUuids(userId, pollId, trx = db) {
+  if (!userId) {
+    return [];
+  }
+
+  const rows = await trx('users_answers')
+    .join('answers', 'answers.id', 'users_answers.answer_id')
+    .where({ 'users_answers.user_id': userId, 'users_answers.poll_id': pollId })
+    .select('answers.uuid as answerUuid');
+
+  return rows.map(row => row.answerUuid);
+}
+
+async function getUserAnswerUuidsByPoll(userUuid, pollUuid) {
+  const userId = await getUserId(userUuid);
+  const poll = await db('polls').where({ uuid: pollUuid }).select('id').first();
+
+  if (!userId || !poll) {
+    return [];
+  }
+
+  return getUserAnswerUuids(userId, poll.id);
+}
+
 async function getUserPolls(userUuid) {
   const userId = await getUserId(userUuid);
 
@@ -145,7 +170,7 @@ async function getUserPolls(userUuid) {
  *                     voting again for a voted answer removes it (multiple choice)
  *
  * Returns null when the answer does not exist, otherwise
- * { accepted, pollUuid, added: [{uuid, answerUuid}], removed: [voteUuid] }
+ * { accepted, pollUuid, added: [{uuid, answerUuid}], removed: [voteUuid], myAnswers: [answerUuid] }
  */
 async function castVote(userUuid, answerUuid) {
   return db.transaction(async trx => {
@@ -194,8 +219,10 @@ async function castVote(userUuid, answerUuid) {
       result.accepted = true;
     }
 
+    result.myAnswers = await getUserAnswerUuids(userId, poll.id, trx);
+
     return result;
   });
 }
 
-module.exports = { init, createUser, checkUser, createPoll, getPoll, getUserPolls, castVote };
+module.exports = { init, createUser, checkUser, createPoll, getPoll, getUserAnswerUuidsByPoll, getUserPolls, castVote };

@@ -31,6 +31,7 @@ export default function PollViewer() {
 		const response = await fetch(`/api/poll/${pollUuid}`);
 		const apiPoll = await response.json();
 		setPoll(apiPoll);
+		setVotedAnswersUuids(apiPoll.myAnswers ?? []);
 		console.log(apiPoll.votes);
 		setAnswersMap(Object.fromEntries(apiPoll.votes.map(vote => [vote.uuid, vote.answerUuid])));
 	}
@@ -44,21 +45,12 @@ export default function PollViewer() {
 			body: JSON.stringify({ answers: answerUuid })
 		});
 
-		if(!response) {
-			return ;
-		}
+		// Refused votes (409) also tell us what we currently voted for
+		const body = await response.json().catch(() => ({}));
 
-		if (poll.multiple_choice) {
-			if (votedAnswersUuids.includes(answerUuid)) {
-				setVotedAnswersUuids(votedAnswersUuids.filter((uuid) => uuid !== answerUuid));
-			} else {
-				setVotedAnswersUuids([...votedAnswersUuids, answerUuid]);
-			}
-		} else {
-			setVotedAnswersUuids([answerUuid]);
+		if(body.myAnswers) {
+			setVotedAnswersUuids(body.myAnswers);
 		}
-
-		// To Do
 	}
 
 	useEffect(() => {

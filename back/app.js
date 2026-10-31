@@ -125,6 +125,8 @@ app.get('/api/poll/:pollUuid', asyncHandler(async function(req, res) {
     return;
   }
 
+  poll.myAnswers = await db.getUserAnswerUuidsByPoll(getExistingUserUuid(req), pollUuid);
+
   res.send(poll);
 }));
 
@@ -168,13 +170,13 @@ app.post('/api/vote', asyncHandler(async function(req, res) {
   }
 
   if (!result.accepted) {
-    res.status(409).send({ error: 'Vote not allowed by the poll rules' });
+    res.status(409).send({ error: 'Vote not allowed by the poll rules', myAnswers: result.myAnswers });
     return;
   }
 
   queueBroadcast(result.pollUuid, result.added, result.removed);
 
-  res.send();
+  res.send({ myAnswers: result.myAnswers });
 }));
 
 // 2. Send votes to the viewers of each poll (by batches, every 300ms)
