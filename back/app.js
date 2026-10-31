@@ -7,8 +7,6 @@ const fs = require('fs');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const ws = require('ws');
-const assert = require('assert');
-const uuid = require('uuid');
 
 //---------------- Local Libraries --------------------------//
 
@@ -97,45 +95,6 @@ function parsePoll(body) {
   };
 }
 
-//---------------- Logic --------------------------//
-
-async function checkVoteValid(userUuid, answerUuid) {
-  const poll = await db.getPollByAnswerUuid(answerUuid);
-
-  if (!poll) {
-    return null;
-  }
-
-  console.log('poll', poll);
-
-  if (poll.multiple_vote) {
-    return true;
-  }
-
-  const userAnswers = await db.getUserAnswersByUserAndPoll(userUuid, poll.uuid);
-
-  console.log('userAnswers', userAnswers);
-
-  if (userAnswers.length === 0) {
-    return true;
-  }
-
-  if (poll.multiple_choice) {
-    return !(answerUuid in userAnswers.map(a => a.answer_uuid));
-  }
-
-  if (poll.change_vote) {
-    // Remove previous vote
-    assert(userAnswers.length === 1);
-
-    await db.removeVote(userAnswers[0].uuid);
-
-    return true;
-  }
-
-  return false;
-}
-
 //---------------- Routes --------------------------//
 
 app.use('/api', asyncHandler(async function(req, res, next) {
@@ -166,6 +125,8 @@ app.get('/api/poll/:pollUuid', asyncHandler(async function(req, res) {
     return;
   }
 
+  poll.myAnswers = await db.getUserAnswerUuidsByPoll(getExistingUserUuid(req), pollUuid);
+
   res.send(poll);
 }));
 
@@ -178,11 +139,20 @@ app.get('/api/my-polls', asyncHandler(async function(req, res) {
 
 //---------------- websockets --------------------------//
 
-const unsentVotesQueue = [];
+// pollUuid -> { votes: [{uuid, answerUuid}], removed: [voteUuid] }
+const pendingBroadcasts = new Map();
 
-const unsavedVotesQueue = [];
+function queueBroadcast(pollUuid, added, removed) {
+  if (!pendingBroadcasts.has(pollUuid)) {
+    pendingBroadcasts.set(pollUuid, { votes: [], removed: [] });
+  }
 
-// 1. Receive votes (handled by http)
+  const pending = pendingBroadcasts.get(pollUuid);
+  pending.votes.push(...added);
+  pending.removed.push(...removed);
+}
+
+// 1. Receive votes (handled by http), checked and saved right away
 app.post('/api/vote', asyncHandler(async function(req, res) {
   const answerUuid = req.body?.answers;
 
@@ -192,79 +162,72 @@ app.post('/api/vote', asyncHandler(async function(req, res) {
   }
 
   const userUuid = await getUserUuid(req, res);
-  const valid = await checkVoteValid(userUuid, answerUuid);
+  const result = await db.castVote(userUuid, answerUuid);
 
-  if (valid === null) {
+  if (!result) {
     res.status(404).send({ error: 'Answer not found' });
     return;
   }
 
-  if (!valid) {
-    res.send();
-    console.log('invalid vote');
-
+  if (!result.accepted) {
+    res.status(409).send({ error: 'Vote not allowed by the poll rules', myAnswers: result.myAnswers });
     return;
   }
-  console.log('valid vote');
 
-  // The vote gets its final uuid now, so that viewers and database agree on it
-  unsentVotesQueue.push({uuid: uuid.v4().toUpperCase(), answerUuid: answerUuid, userUuid: userUuid});
+  queueBroadcast(result.pollUuid, result.added, result.removed);
 
-  res.send();
+  res.send({ myAnswers: result.myAnswers });
 }));
 
-// 2. Send votes (by batches, every second)
+// 2. Send votes to the viewers of each poll (by batches, every 300ms)
 // Only vote and answer uuids are sent: never the user uuid, which is the session cookie.
-function broadcastVotes(votes) {
-  wss.clients.forEach(client => {
-    if (client.readyState === 1) {
-      client.send(votes);
-  }});
-}
-
-setInterval(async function() {
-  if (unsentVotesQueue.length > 0) {
-    const votes = unsentVotesQueue.splice(0, 10);
-
-    unsavedVotesQueue.push(...votes);
-
-    broadcastVotes(JSON.stringify(votes.map(vote => ({ uuid: vote.uuid, answerUuid: vote.answerUuid }))));
+setInterval(function() {
+  if (pendingBroadcasts.size === 0) {
+    return;
   }
+
+  const batches = new Map(pendingBroadcasts);
+  pendingBroadcasts.clear();
+
+  wss.clients.forEach(client => {
+    const batch = batches.get(client.pollUuid);
+
+    if (batch && client.readyState === ws.OPEN) {
+      client.send(JSON.stringify(batch));
+    }
+  });
 }, 300);
 
 
-// 3. Save votes in database (by batches, every 1.5 seconds)
-setInterval(async function() {
-  if (unsavedVotesQueue.length > 0) {
-    const votes = unsavedVotesQueue.splice(0, 30);
+//---------------- Connection & heartbeat --------------------------//
 
-    await db.vote(votes);
-  }
-}, 500);
+// Clients subscribe to one poll: ws(s)://host/api?poll=XXXXXX
+wss.on('connection', function connection(socket, req) {
+  const params = new URL(req.url, 'http://localhost').searchParams;
 
-
-//---------------- Close ws (don't touch) --------------------------//
-
-//Kick inactive users
-class heartbeat {
-  constructor() {
-    clearTimeout(this.pingTimeout);
-    this.pingTimeout = setTimeout(() => {
-      this.terminate();
-    }, 30000 + 1000);
-  }
-}
-
-wss.on('connection', function connection(ws) {
-  console.log('connected');
+  socket.pollUuid = (params.get('poll') ?? '').toUpperCase();
+  socket.isAlive = true;
+  socket.on('pong', () => { socket.isAlive = true; });
+  socket.on('error', console.error);
 });
 
+// Kick connections that did not answer the previous ping
+const heartbeat = setInterval(function() {
+  wss.clients.forEach(socket => {
+    if (!socket.isAlive) {
+      socket.terminate();
+      return;
+    }
+
+    socket.isAlive = false;
+    socket.ping();
+  });
+}, 30000);
+
 wss.on('error', console.error);
-wss.on('open', heartbeat);
-wss.on('ping', heartbeat);
-wss.on('close', function clear() {
-  clearTimeout(this.pingTimeout);
-})
+wss.on('close', function() {
+  clearInterval(heartbeat);
+});
 
 
 //---------------- Front (production build) --------------------------//

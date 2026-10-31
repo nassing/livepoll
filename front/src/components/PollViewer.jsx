@@ -2,29 +2,38 @@ import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import QR from './QR';
 
-export default function PollViewer() {
+function pollSocketUrl(pollUuid) {
 	const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-	const ws = new WebSocket(`${protocol}://${window.location.host}/api`);
-	
+
+	return `${protocol}://${window.location.host}/api?poll=${encodeURIComponent(pollUuid)}`;
+}
+
+export default function PollViewer() {
 	const [poll, setPoll] = useState(null);
 	const [votedAnswersUuids, setVotedAnswersUuids] = useState([]);
+	// vote uuid -> answer uuid
 	const [answersMap, setAnswersMap] = useState({});
 
-	function updateAnswersMap(key, value) {
-		setAnswersMap(prevMap => ({ ...prevMap, [key]: value }));
-	};
+	function applyVotes(votes, removed) {
+		setAnswersMap(prevMap => {
+			const map = { ...prevMap };
+			votes.forEach(vote => { map[vote.uuid] = vote.answerUuid; });
+			removed.forEach(voteUuid => { delete map[voteUuid]; });
+			return map;
+		});
+	}
 
 	let { pollUuid } = useParams();
+
+	const ws = new WebSocket(pollSocketUrl(pollUuid));
 
 	async function getPoll() {
 		const response = await fetch(`/api/poll/${pollUuid}`);
 		const apiPoll = await response.json();
 		setPoll(apiPoll);
+		setVotedAnswersUuids(apiPoll.myAnswers ?? []);
 		console.log(apiPoll.votes);
-
-		apiPoll.votes.forEach((vote) => {
-			updateAnswersMap(vote.uuid, vote.answerUuid);
-		});
+		setAnswersMap(Object.fromEntries(apiPoll.votes.map(vote => [vote.uuid, vote.answerUuid])));
 	}
 
 	async function handleVote(answerUuid) {
@@ -36,21 +45,12 @@ export default function PollViewer() {
 			body: JSON.stringify({ answers: answerUuid })
 		});
 
-		if(!response) {
-			return ;
-		}
+		// Refused votes (409) also tell us what we currently voted for
+		const body = await response.json().catch(() => ({}));
 
-		if (poll.multiple_choice) {
-			if (votedAnswersUuids.includes(answerUuid)) {
-				setVotedAnswersUuids(votedAnswersUuids.filter((uuid) => uuid !== answerUuid));
-			} else {
-				setVotedAnswersUuids([...votedAnswersUuids, answerUuid]);
-			}
-		} else {
-			setVotedAnswersUuids([answerUuid]);
+		if(body.myAnswers) {
+			setVotedAnswersUuids(body.myAnswers);
 		}
-
-		// To Do
 	}
 
 	useEffect(() => {
@@ -60,11 +60,9 @@ export default function PollViewer() {
 		setTimeout(getPoll, 10000);
 
 		ws.onmessage = (event) => {
-			const receivedVotes = JSON.parse(event.data);
-			console.log(receivedVotes);
-			receivedVotes.forEach((vote) => {
-				updateAnswersMap(vote.uuid, vote.answerUuid);
-			})};
+			const { votes, removed } = JSON.parse(event.data);
+			applyVotes(votes ?? [], removed ?? []);
+		};
 	  
 		  // Close the WebSocket connection when the component unmounts
 		  return () => {
