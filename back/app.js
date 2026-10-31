@@ -39,7 +39,7 @@ function asyncHandler(handler) {
 
 //---------------- Database --------------------------//
 
-db.init();
+const dbReady = db.init();
 
 //---------------- User & Cookie --------------------------//
 
@@ -99,6 +99,11 @@ async function checkVoteValid(userUuid, answerUuid) {
 }
 
 //---------------- Routes --------------------------//
+
+app.use('/api', asyncHandler(async function(req, res, next) {
+  await dbReady;
+  next();
+}));
 
 app.post('/api/poll', asyncHandler(async function(req, res) {
   const userUuid = await getUserUuid(req, res);
