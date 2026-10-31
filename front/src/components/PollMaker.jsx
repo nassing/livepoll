@@ -63,7 +63,7 @@ export default function PollMaker({ goToPoll }) {
 						{ index > 1 && <div className="answer-delete" onClick={() => handleDeleteAnswer(index)}>X</div>}
 					</div>
 				))}
-					<button onClick={ () => handleAddAnswer }>Add new answer</button>
+					<button onClick={ handleAddAnswer }>Add new answer</button>
 			</div>
 
 			<div className="poll-maker-options">
