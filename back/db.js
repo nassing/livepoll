@@ -3,7 +3,7 @@ const uuid = require('uuid');
 const db = require('knex')({
   client: 'sqlite3',
   connection: {
-    filename: "./db"
+    filename: process.env.DB_PATH || "./db"
   }
 });
 

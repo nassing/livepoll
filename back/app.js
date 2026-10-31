@@ -2,6 +2,8 @@
 
 const express = require("express");
 const { createServer } = require('http');
+const path = require('path');
+const fs = require('fs');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const ws = require('ws');
@@ -12,6 +14,9 @@ const assert = require('assert');
 const db = require("./db.js");
 
 //---------------- App Config --------------------------//
+
+const PORT = process.env.PORT || 6678;
+const FRONT_DIST = process.env.FRONT_DIST || path.join(__dirname, '../front/dist');
 
 const app = express();
 
@@ -185,4 +190,16 @@ wss.on('close', function clear() {
 })
 
 
-server.listen(6678);
+//---------------- Front (production build) --------------------------//
+
+// Serves `npm run build` output when present, so the Vite dev server never has to be exposed
+if (fs.existsSync(FRONT_DIST)) {
+  app.use(express.static(FRONT_DIST));
+
+  app.get(/^(?!\/api\/).*/, function(req, res) {
+    res.sendFile(path.join(FRONT_DIST, 'index.html'));
+  });
+}
+
+
+server.listen(PORT);
