@@ -7,6 +7,7 @@ import LivePollLogo from './graphics/LivePollLogo';
 export default function NavBar({goToPoll}) {
 
     const [searchPollUuid, setSearchPollUuid] = useState("");
+    const [searchError, setSearchError] = useState(false);
     const [userPolls, setUserPolls] = useState(null);
 
     async function getUserPolls() {
@@ -14,6 +15,15 @@ export default function NavBar({goToPoll}) {
 		const apiUserPolls = await response.json();
 		setUserPolls(apiUserPolls);
 	}
+
+    async function searchPoll() {
+        const found = await goToPoll(searchPollUuid);
+
+        setSearchError(!found);
+        if(found) {
+            setSearchPollUuid("");
+        }
+    }
 
     function formatPollQuestion(pollQuestion) {
         if(pollQuestion.length < 15) {
@@ -46,8 +56,9 @@ export default function NavBar({goToPoll}) {
                 <div className="navbar-button">
                     <p>View a poll</p>
                     <div className="poll-search">
-                        <input type="text"  value={ searchPollUuid } onChange={ e => setSearchPollUuid(e.target.value) } />
-                        <button onClick={ () => goToPoll(searchPollUuid) }>Go To Poll</button>
+                        <input type="text" value={ searchPollUuid } onChange={ e => { setSearchPollUuid(e.target.value); setSearchError(false); } } onKeyDown={ e => e.key === 'Enter' && searchPoll() } />
+                        <button onClick={ searchPoll }>Go To Poll</button>
+                        { searchError ? <p>Poll not found</p> : null }
                         { userPolls ? userPolls.map((poll) => (
                             <Link key={ poll.uuid } to={`poll/${poll.uuid}` }>
                                 <p>{ formatPollQuestion(poll.question_text) }</p>
