@@ -137,8 +137,18 @@ app.get('/api/my-polls', asyncHandler(async function(req, res) {
 
 //---------------- websockets --------------------------//
 
-// { votes: [{uuid, answerUuid}], removed: [voteUuid] }
-let pendingBroadcast = { votes: [], removed: [] };
+// pollUuid -> { votes: [{uuid, answerUuid}], removed: [voteUuid] }
+const pendingBroadcasts = new Map();
+
+function queueBroadcast(pollUuid, added, removed) {
+  if (!pendingBroadcasts.has(pollUuid)) {
+    pendingBroadcasts.set(pollUuid, { votes: [], removed: [] });
+  }
+
+  const pending = pendingBroadcasts.get(pollUuid);
+  pending.votes.push(...added);
+  pending.removed.push(...removed);
+}
 
 // 1. Receive votes (handled by http), checked and saved right away
 app.post('/api/vote', asyncHandler(async function(req, res) {
@@ -162,30 +172,28 @@ app.post('/api/vote', asyncHandler(async function(req, res) {
     return;
   }
 
-  pendingBroadcast.votes.push(...result.added);
-  pendingBroadcast.removed.push(...result.removed);
+  queueBroadcast(result.pollUuid, result.added, result.removed);
 
   res.send();
 }));
 
-// 2. Send votes (by batches, every 300ms)
+// 2. Send votes to the viewers of each poll (by batches, every 300ms)
 // Only vote and answer uuids are sent: never the user uuid, which is the session cookie.
-function broadcastVotes(votes) {
-  wss.clients.forEach(client => {
-    if (client.readyState === 1) {
-      client.send(votes);
-  }});
-}
-
 setInterval(function() {
-  if (pendingBroadcast.votes.length === 0 && pendingBroadcast.removed.length === 0) {
+  if (pendingBroadcasts.size === 0) {
     return;
   }
 
-  const batch = pendingBroadcast;
-  pendingBroadcast = { votes: [], removed: [] };
+  const batches = new Map(pendingBroadcasts);
+  pendingBroadcasts.clear();
 
-  broadcastVotes(JSON.stringify(batch));
+  wss.clients.forEach(client => {
+    const batch = batches.get(client.pollUuid);
+
+    if (batch && client.readyState === ws.OPEN) {
+      client.send(JSON.stringify(batch));
+    }
+  });
 }, 300);
 
 
@@ -201,8 +209,11 @@ class heartbeat {
   }
 }
 
-wss.on('connection', function connection(ws) {
-  console.log('connected');
+// Clients subscribe to one poll: ws(s)://host/api?poll=XXXXXX
+wss.on('connection', function connection(socket, req) {
+  const params = new URL(req.url, 'http://localhost').searchParams;
+
+  socket.pollUuid = (params.get('poll') ?? '').toUpperCase();
 });
 
 wss.on('error', console.error);

@@ -2,10 +2,13 @@ import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import QR from './QR';
 
-export default function PollViewer() {
+function pollSocketUrl(pollUuid) {
 	const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-	const ws = new WebSocket(`${protocol}://${window.location.host}/api`);
-	
+
+	return `${protocol}://${window.location.host}/api?poll=${encodeURIComponent(pollUuid)}`;
+}
+
+export default function PollViewer() {
 	const [poll, setPoll] = useState(null);
 	const [votedAnswersUuids, setVotedAnswersUuids] = useState([]);
 	// vote uuid -> answer uuid
@@ -21,6 +24,8 @@ export default function PollViewer() {
 	}
 
 	let { pollUuid } = useParams();
+
+	const ws = new WebSocket(pollSocketUrl(pollUuid));
 
 	async function getPoll() {
 		const response = await fetch(`/api/poll/${pollUuid}`);
