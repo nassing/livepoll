@@ -9,8 +9,7 @@ export default function App() {
   const navigate = useNavigate();
 
   async function goToPoll(pollUuid) {
-    const response = await fetch(`https://livepoll.nassing.fr/api/poll/${pollUuid}`);
-    //const response = await fetch(`http://localhost:6678/api/poll/${pollUuid}`);
+    const response = await fetch(`/api/poll/${pollUuid}`);
 
     if(response) {
       navigate(`/poll/${pollUuid}`);
