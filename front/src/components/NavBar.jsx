@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, createPath } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 import LivePollLogoManager from './graphics/LivePollLogoManager';
 import LivePollLogo from './graphics/LivePollLogo';
@@ -9,12 +9,15 @@ export default function NavBar({goToPoll}) {
     const [searchPollUuid, setSearchPollUuid] = useState("");
     const [searchError, setSearchError] = useState(false);
     const [userPolls, setUserPolls] = useState(null);
+    const location = useLocation();
 
     async function getUserPolls() {
-		const response = await fetch(`/api/my-polls`);
-		const apiUserPolls = await response.json();
-		setUserPolls(apiUserPolls);
-	}
+        const response = await fetch(`/api/my-polls`);
+
+        if(response.ok) {
+            setUserPolls(await response.json());
+        }
+    }
 
     async function searchPoll() {
         const found = await goToPoll(searchPollUuid);
@@ -33,9 +36,10 @@ export default function NavBar({goToPoll}) {
         }
     }
 
+    // Reloaded on navigation so that a freshly created poll shows up
 	useEffect(() => {
 		getUserPolls();
-	}, []);
+	}, [location.pathname]);
 
     return(
         <div className="navbar">
