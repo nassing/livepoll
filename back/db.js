@@ -141,7 +141,8 @@ async function getUserPolls(userUuid) {
  *  - multiple_vote:   anything goes, the same answer can be voted several times
  *  - multiple_choice: one vote per answer, several answers allowed
  *  - otherwise:       a single answer
- *  - change_vote:     voting for another answer replaces the previous one (single answer)
+ *  - change_vote:     voting for another answer replaces the previous one (single answer),
+ *                     voting again for a voted answer removes it (multiple choice)
  *
  * Returns null when the answer does not exist, otherwise
  * { accepted, pollUuid, added: [{uuid, answerUuid}], removed: [voteUuid] }
@@ -172,6 +173,8 @@ async function castVote(userUuid, answerUuid) {
 
       if (sameAnswerVotes.length === 0) {
         toAdd = true;
+      } else if (poll.change_vote) {
+        toRemove = sameAnswerVotes;
       }
     } else if (poll.change_vote && !previousVotes.some(vote => vote.answer_id === answer.id)) {
       toRemove = previousVotes;
