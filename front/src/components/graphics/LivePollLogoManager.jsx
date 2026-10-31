@@ -14,13 +14,15 @@ export default function LivePollLogoManager() {
     for (let i = 0; i < logos.length; i++) {
       logos[i].style.setProperty('--logo-bar-width-' + barNumber, randomPercentage)
     }
-
-    setTimeout(randomBarWidth, 2000);
   }
 
+  // A single loop for the lifetime of the component (it used to start a new one on every render)
   useEffect(() => {
     randomBarWidth();
-  });
+    const interval = setInterval(randomBarWidth, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
 }
 
 //done
