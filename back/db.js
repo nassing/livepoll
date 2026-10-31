@@ -83,8 +83,14 @@ async function createPoll(poll, userUuid) {
   return pollUuid;
 }
 
+// Returns null when the poll does not exist
 async function getPoll(pollUuid) {
   let poll = await db('polls').where({ uuid: pollUuid }).select('id', 'question_text', 'multiple_choice', 'multiple_vote', 'change_vote').first();
+
+  if (!poll) {
+    return null;
+  }
+
   const answers = (await db('answers').where({ poll_id: poll.id }).select('id', 'uuid', 'answer_text'));
   
   const answers_ids = answers.map(answer => answer.id);
@@ -111,8 +117,13 @@ async function getPoll(pollUuid) {
 }
 
 async function getPollByAnswerUuid(answerUuid) {
-  const pollId = (await db('answers').where({ uuid: answerUuid }).select('poll_id').first()).poll_id;
-  const poll = await db('polls').where({ id: pollId }).select('id', 'uuid', 'question_text', 'multiple_choice', 'multiple_vote', 'change_vote').first();
+  const answer = await db('answers').where({ uuid: answerUuid }).select('poll_id').first();
+
+  if (!answer) {
+    return null;
+  }
+
+  const poll = await db('polls').where({ id: answer.poll_id }).select('id', 'uuid', 'question_text', 'multiple_choice', 'multiple_vote', 'change_vote').first();
 
   return poll;
 }

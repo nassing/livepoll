@@ -29,6 +29,14 @@ const server = createServer(app);
 
 const wss = new ws.Server({ server });
 
+// Express 4 does not catch errors thrown by async handlers: without this an exception
+// becomes an unhandled rejection, which kills the whole Node process.
+function asyncHandler(handler) {
+  return function(req, res, next) {
+    handler(req, res, next).catch(next);
+  };
+}
+
 //---------------- Database --------------------------//
 
 db.init();
@@ -55,6 +63,10 @@ async function getUserUuid(req, res) {
 
 async function checkVoteValid(userUuid, answerUuid) {
   const poll = await db.getPollByAnswerUuid(answerUuid);
+
+  if (!poll) {
+    return null;
+  }
 
   console.log('poll', poll);
 
@@ -88,28 +100,33 @@ async function checkVoteValid(userUuid, answerUuid) {
 
 //---------------- Routes --------------------------//
 
-app.post('/api/poll', async function(req, res) {
+app.post('/api/poll', asyncHandler(async function(req, res) {
   const userUuid = await getUserUuid(req, res);
   const poll = req.body;
   const pollUuid = await db.createPoll(poll, userUuid);
 
   res.send({pollUuid: pollUuid});
-});
+}));
 
-app.get('/api/poll/:pollUuid', async function(req, res) {
+app.get('/api/poll/:pollUuid', asyncHandler(async function(req, res) {
   const pollUuid = req.params.pollUuid.toUpperCase();
   const poll = await db.getPoll(pollUuid);
 
-  res.send(poll);
-});
+  if (!poll) {
+    res.status(404).send({ error: 'Poll not found' });
+    return;
+  }
 
-app.get('/api/my-polls', async function(req, res) {
+  res.send(poll);
+}));
+
+app.get('/api/my-polls', asyncHandler(async function(req, res) {
   const userUuid = await getUserUuid(req, res);
 
   const polls = await db.getUserPolls(userUuid);
 
   res.send(polls);
-});
+}));
 
 
 //---------------- websockets --------------------------//
@@ -119,12 +136,23 @@ const unsentVotesQueue = [];
 const unsavedVotesQueue = [];
 
 // 1. Receive votes (handled by http)
-app.post('/api/vote', async function(req, res) {
+app.post('/api/vote', asyncHandler(async function(req, res) {
+  const answerUuid = req.body?.answers;
+
+  if (typeof answerUuid !== 'string') {
+    res.status(400).send({ error: 'Missing answer' });
+    return;
+  }
+
   const userUuid = await getUserUuid(req, res);
+  const valid = await checkVoteValid(userUuid, answerUuid);
 
-  const answerUuid = req.body.answers;
+  if (valid === null) {
+    res.status(404).send({ error: 'Answer not found' });
+    return;
+  }
 
-  if (!await checkVoteValid(userUuid, answerUuid)) {
+  if (!valid) {
     res.send();
     console.log('invalid vote');
 
@@ -136,7 +164,7 @@ app.post('/api/vote', async function(req, res) {
   unsentVotesQueue.push({uuid: uuid.v4().toUpperCase(), answerUuid: answerUuid, userUuid: userUuid});
 
   res.send();
-});
+}));
 
 // 2. Send votes (by batches, every second)
 // Only vote and answer uuids are sent: never the user uuid, which is the session cookie.
@@ -202,6 +230,22 @@ if (fs.existsSync(FRONT_DIST)) {
     res.sendFile(path.join(FRONT_DIST, 'index.html'));
   });
 }
+
+//---------------- Errors --------------------------//
+
+app.use(function(err, req, res, next) {
+  const status = err.status ?? 500;
+
+  if (status >= 500) {
+    console.error(err);
+  }
+
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  res.status(status).send({ error: err.expose ? err.message : 'Internal error' });
+});
 
 
 server.listen(PORT);
