@@ -1,11 +1,20 @@
 const uuid = require('uuid');
+const crypto = require('crypto');
 
 const db = require('knex')({
   client: 'sqlite3',
   connection: {
-    filename: "./db"
-  }
+    filename: process.env.DB_PATH || "./db"
+  },
+  useNullAsDefault: true,
+  // A single connection serializes every query and transaction: this is what makes
+  // "check the vote rules, then insert the vote" atomic in castVote().
+  pool: { min: 1, max: 1 }
 });
+
+// No 0/O/1/I to avoid confusion when a code is typed by hand
+const POLL_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const POLL_CODE_LENGTH = 6;
 
 async function init() {
   const usersTableExist = await db.schema.hasTable('users');
@@ -15,7 +24,7 @@ async function init() {
       table.string('uuid').notNullable().unique();
     })
   }
-  
+
   const pollTableExist = await db.schema.hasTable('polls');
   if (!pollTableExist) {
     await db.schema.createTable('polls', (table) => {
@@ -28,7 +37,7 @@ async function init() {
       table.integer('change_vote').notNullable();
     })
   }
-    
+
   const answerTableExist = await db.schema.hasTable('answers');
   if (!answerTableExist) {
     await db.schema.createTable('answers', (table) => {
@@ -38,7 +47,7 @@ async function init() {
       table.integer('poll_id').notNullable().references('id').inTable('polls');
     })
   }
-    
+
   const usersAnswersTableExist = await db.schema.hasTable('users_answers');
   if (!usersAnswersTableExist) {
     await db.schema.createTable('users_answers', (table) => {
@@ -59,50 +68,64 @@ async function createUser() {
   return userUuid;
 }
 
-async function checkUser(userUuid) {
+async function getUserId(userUuid, trx = db) {
   if (!userUuid) {
-    return false;
+    return null;
   }
 
-  const user = await db('users').where({ uuid: userUuid }).select('id').first();
+  const user = await trx('users').where({ uuid: userUuid }).select('id').first();
 
-  return !!user;
+  return user?.id ?? null;
+}
+
+async function checkUser(userUuid) {
+  return (await getUserId(userUuid)) !== null;
+}
+
+function generatePollCode() {
+  let code = '';
+  for (let i = 0; i < POLL_CODE_LENGTH; i++) {
+    code += POLL_CODE_ALPHABET[crypto.randomInt(POLL_CODE_ALPHABET.length)];
+  }
+  return code;
 }
 
 async function createPoll(poll, userUuid) {
-  const userId = (await db('users').where({ uuid: userUuid }).select('id').first()).id;
+  return db.transaction(async trx => {
+    const userId = await getUserId(userUuid, trx);
 
-  const pollUuid = uuid.v4().slice(0, 6).toUpperCase();
-  await db('polls').insert({ uuid: pollUuid, user_id: userId, question_text: poll.question, multiple_choice: poll.multipleChoice, multiple_vote: poll.multipleVote, change_vote: poll.changeVote });
-  
-  const pollId = (await db('polls').where({ uuid: pollUuid }).select('id').first()).id;
-  const answers = poll.answers.map(answer => { return { uuid: uuid.v4().toUpperCase(), answer_text: answer, poll_id: pollId } });
-  
-  await db('answers').insert(answers);
+    let pollUuid;
+    do {
+      pollUuid = generatePollCode();
+    } while (await trx('polls').where({ uuid: pollUuid }).first());
 
-  return pollUuid;
+    const [pollId] = await trx('polls').insert({ uuid: pollUuid, user_id: userId, question_text: poll.question, multiple_choice: poll.multipleChoice, multiple_vote: poll.multipleVote, change_vote: poll.changeVote });
+
+    const answers = poll.answers.map(answer => { return { uuid: uuid.v4().toUpperCase(), answer_text: answer, poll_id: pollId } });
+    await trx('answers').insert(answers);
+
+    return pollUuid;
+  });
 }
 
+// Returns null when the poll does not exist
 async function getPoll(pollUuid) {
   let poll = await db('polls').where({ uuid: pollUuid }).select('id', 'question_text', 'multiple_choice', 'multiple_vote', 'change_vote').first();
-  const answers = (await db('answers').where({ poll_id: poll.id }).select('id', 'uuid', 'answer_text'));
-  
-  const answers_ids = answers.map(answer => answer.id);
 
-  const votes_uuids = await db('users_answers').whereIn('answer_id', answers_ids).select('answer_id', 'uuid');
-    
-  poll.votes = [];
+  if (!poll) {
+    return null;
+  }
 
-  answers.forEach(answer => {
-    const answer_votes = votes_uuids.filter(vote => vote.answer_id === answer.id);
+  const answers = await db('answers').where({ poll_id: poll.id }).select('id', 'uuid', 'answer_text');
 
-    answer_votes.forEach((vote) => {
-      poll.votes.push({uuid: vote.uuid, answerUuid: answer.uuid});
-    });
+  const votes = await db('users_answers')
+    .join('answers', 'answers.id', 'users_answers.answer_id')
+    .where('users_answers.poll_id', poll.id)
+    .select('users_answers.uuid as uuid', 'answers.uuid as answerUuid');
 
-    delete answer.id;
-  });
-  
+  answers.forEach(answer => delete answer.id);
+
+  poll.votes = votes;
   poll.answers = answers;
   poll.uuid = pollUuid;
   delete poll.id;
@@ -110,75 +133,105 @@ async function getPoll(pollUuid) {
   return poll;
 }
 
-async function getPollByAnswerUuid(answerUuid) {
-  const pollId = (await db('answers').where({ uuid: answerUuid }).select('poll_id').first()).poll_id;
-  const poll = await db('polls').where({ id: pollId }).select('id', 'uuid', 'question_text', 'multiple_choice', 'multiple_vote', 'change_vote').first();
+// Answer uuids the user has currently voted for in a poll
+async function getUserAnswerUuids(userId, pollId, trx = db) {
+  if (!userId) {
+    return [];
+  }
 
-  return poll;
+  const rows = await trx('users_answers')
+    .join('answers', 'answers.id', 'users_answers.answer_id')
+    .where({ 'users_answers.user_id': userId, 'users_answers.poll_id': pollId })
+    .select('answers.uuid as answerUuid');
+
+  return rows.map(row => row.answerUuid);
 }
 
-async function getUserAnswersByUserAndPoll(userUuid, pollUuid) {
-  const userId = (await db('users').where({ uuid: userUuid }).select('id').first()).id;
-  const pollId = (await db('polls').where({ uuid: pollUuid }).select('id').first()).id;
+async function getUserAnswerUuidsByPoll(userUuid, pollUuid) {
+  const userId = await getUserId(userUuid);
+  const poll = await db('polls').where({ uuid: pollUuid }).select('id').first();
 
-  const user_answers = (await db('users_answers').where({ user_id: userId, poll_id: pollId }).select('uuid', 'answer_id'));
+  if (!userId || !poll) {
+    return [];
+  }
 
-  const answers_ids = user_answers.map(answer => answer.answer_id);
-  const answers = await db('answers').whereIn('id', answers_ids).select('id', 'uuid');
-
-  user_answers.forEach(user_answer => {
-    user_answer.answer_uuid = answers.find(answer => answer.id === user_answer.answer_id).uuid;
-    delete user_answer.answer_id;
-  });
-
-  return user_answers;
+  return getUserAnswerUuids(userId, poll.id);
 }
 
 async function getUserPolls(userUuid) {
-  const userId = (await db('users').where({ uuid: userUuid }).select('id').first()).id;
-  const polls = await db('polls').where({ user_id: userId }).select('uuid', 'question_text');
+  const userId = await getUserId(userUuid);
 
-  return polls;
-}
-
-async function removeVote(voteUuid) {
-  console.log('removing vote', voteUuid);
-  console.log('answer id', await db('users_answers').where({ uuid: voteUuid }).select('answer_id').first());
-  await db('users_answers').delete().where({ uuid: voteUuid });
-}
-
-async function vote(votes) {
-  // {answerUuid: answerUuid, userUuid: userUuid}
-
-  const answers = await db('answers').whereIn('uuid', votes.map(vote => vote.answerUuid)).select('uuid', 'id', 'poll_id');
-  const users = await db('users').whereIn('uuid', votes.map(vote => vote.userUuid)).select('uuid', 'id');
-
-  votes.forEach(vote => {
-    const answer = answers?.find(answer => answer.uuid === vote.answerUuid) ?? null;
-    
-    vote.answer_id = answer?.id ?? null;
-    vote.poll_id = answer?.poll_id ?? null;
-    vote.user_id = users?.find(user => user.uuid === vote.userUuid)?.id ?? null;
-    vote.uuid = uuid.v4().toUpperCase();
-
-    if(!vote.answer_id || !vote.poll_id || !vote.user_id) {
-      vote.toBeRemoved = true;
-    }
-
-    delete vote.answerUuid;
-    delete vote.userUuid;
-  });
-
-  votes = votes.filter(vote => !vote.toBeRemoved);
-
-  //ToDo: les checks
-  //const poll_options = await db('polls').where({ id: pollId }).select('multiple_choice', 'multiple_vote', 'change_vote').first();
-  
-  if(votes.length > 0) {
-    await db('users_answers').insert(votes);
+  if (!userId) {
+    return [];
   }
 
-  return true;
+  return db('polls').where({ user_id: userId }).select('uuid', 'question_text');
 }
 
-module.exports = { init, createUser, checkUser, createPoll, getPoll, getPollByAnswerUuid, getUserAnswersByUserAndPoll, getUserPolls, removeVote, vote };
+/*
+ * Applies the poll rules and records the vote, atomically.
+ *
+ * Rules:
+ *  - multiple_vote:   anything goes, the same answer can be voted several times
+ *  - multiple_choice: one vote per answer, several answers allowed
+ *  - otherwise:       a single answer
+ *  - change_vote:     voting for another answer replaces the previous one (single answer),
+ *                     voting again for a voted answer removes it (multiple choice)
+ *
+ * Returns null when the answer does not exist, otherwise
+ * { accepted, pollUuid, added: [{uuid, answerUuid}], removed: [voteUuid], myAnswers: [answerUuid] }
+ */
+async function castVote(userUuid, answerUuid) {
+  return db.transaction(async trx => {
+    const answer = await trx('answers').where({ uuid: answerUuid }).select('id', 'poll_id').first();
+
+    if (!answer) {
+      return null;
+    }
+
+    const poll = await trx('polls').where({ id: answer.poll_id }).select('id', 'uuid', 'multiple_choice', 'multiple_vote', 'change_vote').first();
+    const userId = await getUserId(userUuid, trx);
+
+    const previousVotes = await trx('users_answers')
+      .where({ user_id: userId, poll_id: poll.id })
+      .select('uuid', 'answer_id');
+
+    const result = { accepted: false, pollUuid: poll.uuid, added: [], removed: [] };
+    let toRemove = [];
+    let toAdd = false;
+
+    if (poll.multiple_vote || previousVotes.length === 0) {
+      toAdd = true;
+    } else if (poll.multiple_choice) {
+      const sameAnswerVotes = previousVotes.filter(vote => vote.answer_id === answer.id);
+
+      if (sameAnswerVotes.length === 0) {
+        toAdd = true;
+      } else if (poll.change_vote) {
+        toRemove = sameAnswerVotes;
+      }
+    } else if (poll.change_vote && !previousVotes.some(vote => vote.answer_id === answer.id)) {
+      toRemove = previousVotes;
+      toAdd = true;
+    }
+
+    if (toRemove.length > 0) {
+      await trx('users_answers').whereIn('uuid', toRemove.map(vote => vote.uuid)).delete();
+      result.removed = toRemove.map(vote => vote.uuid);
+      result.accepted = true;
+    }
+
+    if (toAdd) {
+      const voteUuid = uuid.v4().toUpperCase();
+      await trx('users_answers').insert({ uuid: voteUuid, user_id: userId, answer_id: answer.id, poll_id: poll.id });
+      result.added.push({ uuid: voteUuid, answerUuid: answerUuid });
+      result.accepted = true;
+    }
+
+    result.myAnswers = await getUserAnswerUuids(userId, poll.id, trx);
+
+    return result;
+  });
+}
+
+module.exports = { init, createUser, checkUser, createPoll, getPoll, getUserAnswerUuidsByPoll, getUserPolls, castVote };
