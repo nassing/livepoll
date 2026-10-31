@@ -8,11 +8,17 @@ export default function PollViewer() {
 	
 	const [poll, setPoll] = useState(null);
 	const [votedAnswersUuids, setVotedAnswersUuids] = useState([]);
+	// vote uuid -> answer uuid
 	const [answersMap, setAnswersMap] = useState({});
 
-	function updateAnswersMap(key, value) {
-		setAnswersMap(prevMap => ({ ...prevMap, [key]: value }));
-	};
+	function applyVotes(votes, removed) {
+		setAnswersMap(prevMap => {
+			const map = { ...prevMap };
+			votes.forEach(vote => { map[vote.uuid] = vote.answerUuid; });
+			removed.forEach(voteUuid => { delete map[voteUuid]; });
+			return map;
+		});
+	}
 
 	let { pollUuid } = useParams();
 
@@ -21,10 +27,7 @@ export default function PollViewer() {
 		const apiPoll = await response.json();
 		setPoll(apiPoll);
 		console.log(apiPoll.votes);
-
-		apiPoll.votes.forEach((vote) => {
-			updateAnswersMap(vote.uuid, vote.answerUuid);
-		});
+		setAnswersMap(Object.fromEntries(apiPoll.votes.map(vote => [vote.uuid, vote.answerUuid])));
 	}
 
 	async function handleVote(answerUuid) {
@@ -60,11 +63,9 @@ export default function PollViewer() {
 		setTimeout(getPoll, 10000);
 
 		ws.onmessage = (event) => {
-			const receivedVotes = JSON.parse(event.data);
-			console.log(receivedVotes);
-			receivedVotes.forEach((vote) => {
-				updateAnswersMap(vote.uuid, vote.answerUuid);
-			})};
+			const { votes, removed } = JSON.parse(event.data);
+			applyVotes(votes ?? [], removed ?? []);
+		};
 	  
 		  // Close the WebSocket connection when the component unmounts
 		  return () => {

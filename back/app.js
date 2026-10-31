@@ -137,7 +137,8 @@ app.get('/api/my-polls', asyncHandler(async function(req, res) {
 
 //---------------- websockets --------------------------//
 
-const unsentVotesQueue = [];
+// { votes: [{uuid, answerUuid}], removed: [voteUuid] }
+let pendingBroadcast = { votes: [], removed: [] };
 
 // 1. Receive votes (handled by http), checked and saved right away
 app.post('/api/vote', asyncHandler(async function(req, res) {
@@ -161,7 +162,8 @@ app.post('/api/vote', asyncHandler(async function(req, res) {
     return;
   }
 
-  unsentVotesQueue.push(...result.added);
+  pendingBroadcast.votes.push(...result.added);
+  pendingBroadcast.removed.push(...result.removed);
 
   res.send();
 }));
@@ -176,11 +178,14 @@ function broadcastVotes(votes) {
 }
 
 setInterval(function() {
-  if (unsentVotesQueue.length > 0) {
-    const votes = unsentVotesQueue.splice(0, unsentVotesQueue.length);
-
-    broadcastVotes(JSON.stringify(votes));
+  if (pendingBroadcast.votes.length === 0 && pendingBroadcast.removed.length === 0) {
+    return;
   }
+
+  const batch = pendingBroadcast;
+  pendingBroadcast = { votes: [], removed: [] };
+
+  broadcastVotes(JSON.stringify(batch));
 }, 300);
 
 
