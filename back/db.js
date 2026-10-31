@@ -116,24 +116,16 @@ async function getPoll(pollUuid) {
     return null;
   }
 
-  const answers = (await db('answers').where({ poll_id: poll.id }).select('id', 'uuid', 'answer_text'));
-  
-  const answers_ids = answers.map(answer => answer.id);
+  const answers = await db('answers').where({ poll_id: poll.id }).select('id', 'uuid', 'answer_text');
 
-  const votes_uuids = await db('users_answers').whereIn('answer_id', answers_ids).select('answer_id', 'uuid');
-    
-  poll.votes = [];
+  const votes = await db('users_answers')
+    .join('answers', 'answers.id', 'users_answers.answer_id')
+    .where('users_answers.poll_id', poll.id)
+    .select('users_answers.uuid as uuid', 'answers.uuid as answerUuid');
 
-  answers.forEach(answer => {
-    const answer_votes = votes_uuids.filter(vote => vote.answer_id === answer.id);
+  answers.forEach(answer => delete answer.id);
 
-    answer_votes.forEach((vote) => {
-      poll.votes.push({uuid: vote.uuid, answerUuid: answer.uuid});
-    });
-
-    delete answer.id;
-  });
-  
+  poll.votes = votes;
   poll.answers = answers;
   poll.uuid = pollUuid;
   delete poll.id;
