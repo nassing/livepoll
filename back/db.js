@@ -159,7 +159,6 @@ async function vote(votes) {
     vote.answer_id = answer?.id ?? null;
     vote.poll_id = answer?.poll_id ?? null;
     vote.user_id = users?.find(user => user.uuid === vote.userUuid)?.id ?? null;
-    vote.uuid = uuid.v4().toUpperCase();
 
     if(!vote.answer_id || !vote.poll_id || !vote.user_id) {
       vote.toBeRemoved = true;

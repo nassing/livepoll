@@ -8,6 +8,7 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const ws = require('ws');
 const assert = require('assert');
+const uuid = require('uuid');
 
 //---------------- Local Libraries --------------------------//
 
@@ -131,14 +132,15 @@ app.post('/api/vote', async function(req, res) {
   }
   console.log('valid vote');
 
-  unsentVotesQueue.push({answerUuid: answerUuid, userUuid: userUuid});
+  // The vote gets its final uuid now, so that viewers and database agree on it
+  unsentVotesQueue.push({uuid: uuid.v4().toUpperCase(), answerUuid: answerUuid, userUuid: userUuid});
 
   res.send();
 });
 
 // 2. Send votes (by batches, every second)
+// Only vote and answer uuids are sent: never the user uuid, which is the session cookie.
 function broadcastVotes(votes) {
-  console.log('votes', votes);
   wss.clients.forEach(client => {
     if (client.readyState === 1) {
       client.send(votes);
@@ -151,7 +153,7 @@ setInterval(async function() {
 
     unsavedVotesQueue.push(...votes);
 
-    broadcastVotes(JSON.stringify(votes));
+    broadcastVotes(JSON.stringify(votes.map(vote => ({ uuid: vote.uuid, answerUuid: vote.answerUuid }))));
   }
 }, 300);
 
