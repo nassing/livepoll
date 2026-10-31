@@ -63,6 +63,11 @@ async function getUserUuid(req, res) {
   return userUuid;
 }
 
+// Read-only variant: does not create a user for anonymous visitors
+function getExistingUserUuid(req) {
+  return req.cookies.userUuid ?? null;
+}
+
 //---------------- Validation --------------------------//
 
 function isNonEmptyString(value, maxLength) {
@@ -165,9 +170,7 @@ app.get('/api/poll/:pollUuid', asyncHandler(async function(req, res) {
 }));
 
 app.get('/api/my-polls', asyncHandler(async function(req, res) {
-  const userUuid = await getUserUuid(req, res);
-
-  const polls = await db.getUserPolls(userUuid);
+  const polls = await db.getUserPolls(getExistingUserUuid(req));
 
   res.send(polls);
 }));

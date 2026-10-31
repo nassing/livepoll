@@ -59,14 +59,18 @@ async function createUser() {
   return userUuid;
 }
 
-async function checkUser(userUuid) {
+async function getUserId(userUuid) {
   if (!userUuid) {
-    return false;
+    return null;
   }
 
   const user = await db('users').where({ uuid: userUuid }).select('id').first();
 
-  return !!user;
+  return user?.id ?? null;
+}
+
+async function checkUser(userUuid) {
+  return (await getUserId(userUuid)) !== null;
 }
 
 async function createPoll(poll, userUuid) {
@@ -146,10 +150,13 @@ async function getUserAnswersByUserAndPoll(userUuid, pollUuid) {
 }
 
 async function getUserPolls(userUuid) {
-  const userId = (await db('users').where({ uuid: userUuid }).select('id').first()).id;
-  const polls = await db('polls').where({ user_id: userId }).select('uuid', 'question_text');
+  const userId = await getUserId(userUuid);
 
-  return polls;
+  if (!userId) {
+    return [];
+  }
+
+  return db('polls').where({ user_id: userId }).select('uuid', 'question_text');
 }
 
 async function removeVote(voteUuid) {
