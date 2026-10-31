@@ -47,18 +47,18 @@ const dbReady = db.init();
 
 //---------------- User & Cookie --------------------------//
 
+const COOKIE_MAX_AGE = 365 * 24 * 60 * 60 * 1000;
+
+// Returns the user of the request, creating one if needed
 async function getUserUuid(req, res) {  
   let userUuid = req.cookies.userUuid;
 
   if (!(await db.checkUser(userUuid))) {
     userUuid = await db.createUser();
-
-    const expirationDate = new Date();
-    expirationDate.setMonth(expirationDate.getMonth() + 1);
-
-    //res.cookie('userUuid', userUuid, { httpOnly: true, expires: expirationDate, domain: '.nassing.tk', sameSite: 'None', secure: 'true', partitionKey: '' });
-    res.cookie('userUuid', userUuid, { expires: expirationDate });
   }
+
+  // Refreshed on every write so that active users never lose their polls
+  res.cookie('userUuid', userUuid, { maxAge: COOKIE_MAX_AGE, httpOnly: true, sameSite: 'lax' });
 
   return userUuid;
 }
